@@ -17,9 +17,13 @@ class VideoResolutionNode:
     ASPECT_RATIOS = {
         "1:1 (Square)": (1, 1),
         "16:9 (Widescreen)": (16, 9),
+        "19:9 (Cinematic Mobile)": (19, 9),
+        "2.39:1 (CinemaScope)": (239, 100),
         "9:16 (Vertical)": (9, 16),
         "4:3 (Classic)": (4, 3),
+        "5:4 (Classic Photo)": (5, 4),
         "3:4 (Portrait)": (3, 4),
+        "4:5 (Social Portrait)": (4, 5),
         "21:9 (Ultrawide)": (21, 9),
         "9:21 (Tall)": (9, 21),
         "3:2 (Photo)": (3, 2),
@@ -36,6 +40,30 @@ class VideoResolutionNode:
         "2x": 2.0,
     }
 
+    CUSTOM_MODES = [
+        "manual",
+        "from_width",
+        "from_height",
+    ]
+
+    ROUNDING_MODES = [
+        "floor",
+        "nearest",
+        "ceil",
+    ]
+
+    MODEL_PROFILES = {
+        "Custom": {"divisible_by": None, "add_one": None},
+        # ComfyUI-LTXVideo workflows in this repo expect exact multiples of 64.
+        # Using add_one here creates a mismatch because LTX latent creation uses
+        # integer division by 32 and silently drops the extra pixel.
+        "LTX Video / LTX2": {"divisible_by": 64, "add_one": False},
+        "CogVideoX": {"divisible_by": 16, "add_one": False},
+        "Hunyuan Video": {"divisible_by": 16, "add_one": False},
+        "Mochi": {"divisible_by": 64, "add_one": False},
+        "Wan 2.x": {"divisible_by": 16, "add_one": False},
+    }
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -43,14 +71,16 @@ class VideoResolutionNode:
                 "resolution": (list(cls.RESOLUTIONS.keys()), {"default": "720p"}),
                 "aspect_ratio": (list(cls.ASPECT_RATIOS.keys()), {"default": "16:9 (Widescreen)"}),
                 "scale": (list(cls.SCALE_FACTORS.keys()), {"default": "1x"}),
+                "model_profile": (list(cls.MODEL_PROFILES.keys()), {"default": "LTX Video / LTX2"}),
+                "custom_mode": (cls.CUSTOM_MODES, {"default": "manual"}),
+                "custom_width": ("INT", {"default": 1280, "min": 64, "max": 16384, "step": 8}),
+                "custom_height": ("INT", {"default": 720, "min": 64, "max": 16384, "step": 8}),
                 "divisible_by": ([8, 16, 32, 64], {"default": 32}),
+                "rounding_mode": (cls.ROUNDING_MODES, {"default": "floor"}),
                 "add_one": ("BOOLEAN", {"default": True}),
                 "swap": ("BOOLEAN", {"default": False}),
             },
-            "optional": {
-                "custom_width": ("INT", {"default": 1280, "min": 64, "max": 16384, "step": 8}),
-                "custom_height": ("INT", {"default": 720, "min": 64, "max": 16384, "step": 8}),
-            }
+            "optional": {}
         }
 
     RETURN_TYPES = ("INT", "INT", "STRING")
@@ -63,38 +93,66 @@ class VideoResolutionNode:
     FUNCTION = "get_resolution"
     CATEGORY = "video"
 
-    DESCRIPTION = "Video resolution selector with presets for 480p-8K. Supports LTX format (divisible_by + 1)."
+    DESCRIPTION = "Video resolution selector with presets, model profiles, and custom sizing modes."
     SEARCH_ALIASES = ["video size", "ltx resolution", "video dimensions", "cogvideo", "hunyuan", "ltx2"]
 
-    def get_resolution(self, resolution, aspect_ratio, scale, divisible_by, add_one, swap,
-                       custom_width=1280, custom_height=720):
+    @staticmethod
+    def _quantize(value, divisible_by, rounding_mode):
+        if rounding_mode == "nearest":
+            return int(round(value / divisible_by) * divisible_by)
+        if rounding_mode == "ceil":
+            return int(((value + divisible_by - 1) // divisible_by) * divisible_by)
+        return int((value // divisible_by) * divisible_by)
+
+    def _get_preset_resolution(self, resolution, aspect_ratio):
+        base_height = self.RESOLUTIONS[resolution]
+        w_ratio, h_ratio = self.ASPECT_RATIOS[aspect_ratio]
+
+        if w_ratio == h_ratio:
+            return base_height, base_height
+
+        if w_ratio > h_ratio:
+            return round(base_height * w_ratio / h_ratio), base_height
+
+        return base_height, round(base_height * h_ratio / w_ratio)
+
+    def _get_custom_resolution(self, aspect_ratio, custom_mode, custom_width, custom_height):
+        if custom_mode == "manual":
+            return custom_width, custom_height
+
+        w_ratio, h_ratio = self.ASPECT_RATIOS[aspect_ratio]
+
+        if custom_mode == "from_width":
+            return custom_width, round(custom_width * h_ratio / w_ratio)
+
+        return round(custom_height * w_ratio / h_ratio), custom_height
+
+    def _resolve_model_rules(self, model_profile, divisible_by, add_one):
+        profile = self.MODEL_PROFILES[model_profile]
+        resolved_divisible_by = profile["divisible_by"] if profile["divisible_by"] is not None else divisible_by
+        resolved_add_one = profile["add_one"] if profile["add_one"] is not None else add_one
+        return resolved_divisible_by, resolved_add_one
+
+    def get_resolution(self, resolution, aspect_ratio, scale, model_profile, custom_mode, custom_width,
+                       custom_height, divisible_by, rounding_mode, add_one, swap):
 
         scale_factor = self.SCALE_FACTORS[scale]
+        divisible_by, add_one = self._resolve_model_rules(model_profile, divisible_by, add_one)
 
         if resolution == "Custom":
-            width = custom_width
-            height = custom_height
+            width, height = self._get_custom_resolution(
+                aspect_ratio, custom_mode, custom_width, custom_height
+            )
         else:
-            base_height = self.RESOLUTIONS[resolution]
-            w_ratio, h_ratio = self.ASPECT_RATIOS[aspect_ratio]
-
-            if w_ratio == h_ratio:
-                width = base_height
-                height = base_height
-            elif w_ratio > h_ratio:
-                height = base_height
-                width = int(base_height * w_ratio / h_ratio)
-            else:
-                width = base_height
-                height = int(base_height * h_ratio / w_ratio)
+            width, height = self._get_preset_resolution(resolution, aspect_ratio)
 
         # Apply scale
         width = int(width * scale_factor)
         height = int(height * scale_factor)
 
-        # Round to nearest multiple of divisible_by
-        width = (width // divisible_by) * divisible_by
-        height = (height // divisible_by) * divisible_by
+        # Quantize dimensions to model requirements.
+        width = self._quantize(width, divisible_by, rounding_mode)
+        height = self._quantize(height, divisible_by, rounding_mode)
 
         # Ensure minimum size
         width = max(width, divisible_by)
