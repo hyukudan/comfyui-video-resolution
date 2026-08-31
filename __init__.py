@@ -17,7 +17,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "VideoResolutionNode": "Video Resolution",
+    "VideoResolutionNode": "Kirei ComfyUI Video Resolution",
 }
 
 WEB_DIRECTORY = "./web"

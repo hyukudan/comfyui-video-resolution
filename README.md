@@ -1,4 +1,4 @@
-# ComfyUI Video Resolution
+# Kirei ComfyUI Video Resolution
 
 **Choose a video canvas. Get dimensions aligned to your model.**
 
@@ -22,16 +22,19 @@ cd ComfyUI/custom_nodes
 git clone https://github.com/hyukudan/comfyui-video-resolution.git
 ```
 
-Requires Python 3.10+. Add **Video Resolution** from the node menu; it is in the
+Requires Python 3.10+. Add **Kirei ComfyUI Video Resolution** from the node menu; it is in the
 `video` category. Search aliases include `h3`, `minimax`, `video size` and `ltx2`.
 
 > The Git repository is already listed in Manager. The first Registry release
 > under ID `video-resolution` is being prepared; the features below describe
-> version **1.2.0**. Avoid installing a second copy alongside the existing one.
+> version **1.2.1**. Avoid installing a second copy alongside the existing one.
+
+The display name includes Kirei; the repository name, Registry ID and internal
+node ID (`VideoResolutionNode`) remain unchanged for existing installations and workflows.
 
 ## Quick start: MiniMax H3
 
-1. Add **Video Resolution** and set `model_profile` to **MiniMax H3**.
+1. Add **Kirei ComfyUI Video Resolution** and set `model_profile` to **MiniMax H3**.
 2. Set `resolution` to **H3 Native (768p)**, `aspect_ratio` to **16:9 (Widescreen)**,
    and keep `scale = 1x` and `swap = false`.
 3. Connect `width` and `height` to the corresponding inputs of your H3 generation
@@ -39,7 +42,7 @@ Requires Python 3.10+. Add **Video Resolution** from the node menu; it is in the
 
 ```mermaid
 flowchart LR
-    R[Video Resolution] -->|width + height| H[H3 generation node]
+    R[Kirei ComfyUI Video Resolution] -->|width + height| H[H3 generation node]
     E[Optional H3 Prompt Enhancer] -->|enhanced_prompt| H
 ```
 

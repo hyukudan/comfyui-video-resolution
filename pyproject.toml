@@ -1,7 +1,7 @@
 [project]
 name = "video-resolution"
 description = "Video resolution selector with MiniMax H3 native canvas, megapixel budgets, and model-specific alignment for LTX, Wan, Hunyuan, CogVideoX, and Mochi."
-version = "1.2.0"
+version = "1.2.1"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
@@ -32,7 +32,7 @@ Documentation = "https://github.com/hyukudan/comfyui-video-resolution/wiki"
 
 [tool.comfy]
 PublisherId = "hyukudan"
-DisplayName = "Video Resolution"
+DisplayName = "Kirei ComfyUI Video Resolution"
 Icon = ""
 includes = [] 
 # "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility
