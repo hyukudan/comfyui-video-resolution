@@ -1,3 +1,6 @@
+import math
+
+
 class VideoResolutionNode:
     """
     Simple video resolution node that outputs width and height.
@@ -12,7 +15,17 @@ class VideoResolutionNode:
         "2160p (4K)": 2160,
         "4320p (8K)": 4320,
         "Custom": 0,
+        "540p": 540,
+        "768p": 768,
+        "H3 Native (768p)": 768,
+        "0.3 MP": 0,
+        "0.5 MP": 0,
+        "0.7 MP": 0,
+        "1.0 MP": 0,
+        "Custom MP": 0,
     }
+
+    MEGAPIXELS = {"0.3 MP": 0.3, "0.5 MP": 0.5, "0.7 MP": 0.7, "1.0 MP": 1.0}
 
     ASPECT_RATIOS = {
         "1:1 (Square)": (1, 1),
@@ -62,16 +75,20 @@ class VideoResolutionNode:
         "Hunyuan Video": {"divisible_by": 16, "add_one": False},
         "Mochi": {"divisible_by": 64, "add_one": False},
         "Wan 2.x": {"divisible_by": 16, "add_one": False},
+        "MiniMax H3": {"divisible_by": 32, "add_one": False},
+        "Wan 2.2 TI2V 5B": {"divisible_by": 32, "add_one": False},
+        "Hunyuan Video 1.5": {"divisible_by": 16, "add_one": False},
+        "LTX 2.3": {"divisible_by": 64, "add_one": False},
     }
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "resolution": (list(cls.RESOLUTIONS.keys()), {"default": "720p"}),
+                "resolution": (list(cls.RESOLUTIONS.keys()), {"default": "720p", "tooltip": "p presets use the short edge. MP presets use 1 MP = 1,000,000 pixels. H3 Native uses a 768 short edge and 1344x768 area cap before alignment."}),
                 "aspect_ratio": (list(cls.ASPECT_RATIOS.keys()), {"default": "16:9 (Widescreen)"}),
                 "scale": (list(cls.SCALE_FACTORS.keys()), {"default": "1x"}),
-                "model_profile": (list(cls.MODEL_PROFILES.keys()), {"default": "LTX Video / LTX2"}),
+                "model_profile": (list(cls.MODEL_PROFILES.keys()), {"default": "LTX Video / LTX2", "tooltip": "Select MiniMax H3 for 32-pixel alignment. Wan 2.2 TI2V 5B needs 32; Wan 2.x retains 16 for the other variants. Profiles override divisible_by and add_one."}),
                 "custom_mode": (cls.CUSTOM_MODES, {"default": "manual"}),
                 "custom_width": ("INT", {"default": 1280, "min": 64, "max": 16384, "step": 8}),
                 "custom_height": ("INT", {"default": 720, "min": 64, "max": 16384, "step": 8}),
@@ -80,7 +97,10 @@ class VideoResolutionNode:
                 "add_one": ("BOOLEAN", {"default": True}),
                 "swap": ("BOOLEAN", {"default": False}),
             },
-            "optional": {}
+            "optional": {
+                "custom_megapixels": ("FLOAT", {"default": 0.5, "min": 0.01, "max": 16.0, "step": 0.01,
+                    "tooltip": "Used only with Custom MP. 1 MP = 1,000,000 pixels before scale and alignment; not a VRAM limit."}),
+            }
         }
 
     RETURN_TYPES = ("INT", "INT", "STRING")
@@ -88,25 +108,37 @@ class VideoResolutionNode:
     OUTPUT_TOOLTIPS = (
         "Width in pixels",
         "Height in pixels",
-        "Resolution as string (e.g. 1281x721)",
+        "Resolution as string (e.g. 1344x768)",
     )
     FUNCTION = "get_resolution"
     CATEGORY = "video"
 
     DESCRIPTION = "Video resolution selector with presets, model profiles, and custom sizing modes."
-    SEARCH_ALIASES = ["video size", "ltx resolution", "video dimensions", "cogvideo", "hunyuan", "ltx2"]
+    SEARCH_ALIASES = ["video size", "ltx resolution", "video dimensions", "cogvideo", "hunyuan", "ltx2", "h3", "minimax", "wan 2.2", "ltx 2.3", "megapixels"]
 
     @staticmethod
     def _quantize(value, divisible_by, rounding_mode):
         if rounding_mode == "nearest":
             return int(round(value / divisible_by) * divisible_by)
         if rounding_mode == "ceil":
-            return int(((value + divisible_by - 1) // divisible_by) * divisible_by)
+            return math.ceil(value / divisible_by) * divisible_by
         return int((value // divisible_by) * divisible_by)
 
-    def _get_preset_resolution(self, resolution, aspect_ratio):
+    def _get_preset_resolution(self, resolution, aspect_ratio, custom_megapixels=0.5):
         base_height = self.RESOLUTIONS[resolution]
         w_ratio, h_ratio = self.ASPECT_RATIOS[aspect_ratio]
+
+        if resolution in self.MEGAPIXELS or resolution == "Custom MP":
+            megapixels = self.MEGAPIXELS.get(resolution, custom_megapixels)
+            if not isinstance(megapixels, (int, float)) or isinstance(megapixels, bool) or not math.isfinite(megapixels) or not 0.01 <= megapixels <= 16:
+                raise ValueError("Custom MP must be a finite number between 0.01 and 16.")
+            height = math.sqrt(megapixels * 1_000_000 * h_ratio / w_ratio)
+            return height * w_ratio / h_ratio, height
+
+        if resolution == "H3 Native (768p)":
+            width, height = base_height * w_ratio / min(w_ratio, h_ratio), base_height * h_ratio / min(w_ratio, h_ratio)
+            factor = min(1.0, math.sqrt((1344 * 768) / (width * height)))
+            return max(32, round(width * factor / 32) * 32), max(32, round(height * factor / 32) * 32)
 
         if w_ratio == h_ratio:
             return base_height, base_height
@@ -134,7 +166,7 @@ class VideoResolutionNode:
         return resolved_divisible_by, resolved_add_one
 
     def get_resolution(self, resolution, aspect_ratio, scale, model_profile, custom_mode, custom_width,
-                       custom_height, divisible_by, rounding_mode, add_one, swap):
+                       custom_height, divisible_by, rounding_mode, add_one, swap, custom_megapixels=0.5):
 
         scale_factor = self.SCALE_FACTORS[scale]
         divisible_by, add_one = self._resolve_model_rules(model_profile, divisible_by, add_one)
@@ -144,11 +176,15 @@ class VideoResolutionNode:
                 aspect_ratio, custom_mode, custom_width, custom_height
             )
         else:
-            width, height = self._get_preset_resolution(resolution, aspect_ratio)
+            width, height = self._get_preset_resolution(resolution, aspect_ratio, custom_megapixels)
 
         # Apply scale
-        width = int(width * scale_factor)
-        height = int(height * scale_factor)
+        width *= scale_factor
+        height *= scale_factor
+        # Preserve legacy preset/custom rounding; MP dimensions stay fractional
+        # so floor/nearest/ceil operate on the requested pixel budget.
+        if resolution not in self.MEGAPIXELS and resolution != "Custom MP":
+            width, height = int(width), int(height)
 
         # Quantize dimensions to model requirements.
         width = self._quantize(width, divisible_by, rounding_mode)
@@ -158,7 +194,7 @@ class VideoResolutionNode:
         width = max(width, divisible_by)
         height = max(height, divisible_by)
 
-        # Add 1 for LTX-style models (divisible_by + 1)
+        # Legacy custom sizing only; built-in model profiles never add a pixel.
         if add_one:
             width += 1
             height += 1
@@ -170,3 +206,29 @@ class VideoResolutionNode:
         resolution_str = f"{width}x{height}"
 
         return (width, height, resolution_str)
+
+
+def preview_resolution(payload):
+    """Validate local UI values, then use the node's execution calculation."""
+    schema = VideoResolutionNode.INPUT_TYPES()
+    inputs = {**schema["required"], **schema["optional"]}
+    if not isinstance(payload, dict) or payload.keys() - inputs.keys():
+        raise ValueError("Expected resolution inputs only.")
+    values = {}
+    for name, (kind, options) in inputs.items():
+        value = payload.get(name, options["default"])
+        if isinstance(kind, list):
+            valid = value in kind
+        elif kind == "BOOLEAN":
+            valid = type(value) is bool
+        else:
+            valid = type(value) in ((int,) if kind == "INT" else (int, float))
+            valid = valid and math.isfinite(value) and options["min"] <= value <= options["max"]
+        if not valid:
+            raise ValueError(f"Invalid {name}.")
+        values[name] = value
+    node = VideoResolutionNode()
+    width, height, label = node.get_resolution(**values)
+    multiple, add_one = node._resolve_model_rules(values["model_profile"], values["divisible_by"], values["add_one"])
+    return {"width": width, "height": height, "resolution_str": label,
+            "megapixels": width * height / 1_000_000, "multiple": multiple, "add_one": add_one}

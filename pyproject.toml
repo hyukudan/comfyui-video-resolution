@@ -1,7 +1,10 @@
 [project]
 name = "video-resolution"
-description = "A ComfyUI node for selecting video resolutions with preset dimensions for video generation models like LTX, CogVideo, and Hunyuan. (Description by CC)"
-version = "1.0.0"
+description = "Video resolution selector with MiniMax H3 native canvas, megapixel budgets, and model-specific alignment for LTX, Wan, Hunyuan, CogVideoX, and Mochi."
+version = "1.2.0"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
 license = {file = "LICENSE"} 
 # classifiers = [
 #     # For OS-independent nodes (works on all operating systems)
@@ -28,9 +31,8 @@ Documentation = "https://github.com/hyukudan/comfyui-video-resolution/wiki"
 "Bug Tracker" = "https://github.com/hyukudan/comfyui-video-resolution/issues"
 
 [tool.comfy]
-PublisherId = ""
-DisplayName = "comfyui-video-resolution"
+PublisherId = "hyukudan"
+DisplayName = "Video Resolution"
 Icon = ""
 includes = [] 
 # "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility
-
